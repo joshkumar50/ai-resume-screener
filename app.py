@@ -3,20 +3,18 @@ import os
 import fitz
 import sqlite3
 import datetime
-import requests # <-- The library for making web requests to the API
+import requests
 from flask import Flask, request, jsonify, render_template, redirect, url_for
 
 # --- INITIALIZE THE APP ---
-# Notice we no longer load spacy or sentence-transformers here!
 app = Flask(__name__)
 
 # --- GET THE API KEY and SETUP THE API ---
-# This will read the secret key from the Render environment settings
 API_TOKEN = os.environ.get('HUGGINGFACE_API_KEY')
 API_URL = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
 headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
-# --- DATABASE SETUP (No changes here) ---
+# --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
@@ -32,7 +30,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             filename TEXT NOT NULL,
             match_percentage REAL NOT NULL,
-            skills TEXT, -- This column will now be unused but we'll leave it for simplicity
+            skills TEXT,
             timestamp DATETIME NOT NULL,
             job_id INTEGER NOT NULL,
             FOREIGN KEY (job_id) REFERENCES job_descriptions (id)
@@ -43,16 +41,13 @@ def init_db():
 
 # --- HELPER FUNCTIONS ---
 def extract_text_from_pdf(pdf_path):
-    # This function remains the same
     try:
         doc = fitz.open(pdf_path); text = "";
         for page in doc: text += page.get_text()
         return text
     except Exception as e: return f"Error reading PDF: {e}"
 
-# --- NEW SIMILARITY FUNCTION USING API ---
 def calculate_similarity_via_api(resume_text, jd_text):
-    """Calculates similarity by calling the Hugging Face Inference API."""
     payload = {
         "inputs": {
             "source_sentence": jd_text,
@@ -61,15 +56,12 @@ def calculate_similarity_via_api(resume_text, jd_text):
     }
     response = requests.post(API_URL, headers=headers, json=payload)
     if response.status_code == 200:
-        return response.json()[0] # The API returns a list with one score
+        return response.json()[0]
     else:
-        # If the API fails for any reason, return 0
         print(f"API Error: {response.status_code} - {response.text}")
         return 0
 
 # --- API ENDPOINTS ---
-# The logic is mostly the same, but skill extraction is removed.
-
 @app.route('/')
 def index():
     conn = sqlite3.connect('database.db'); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
@@ -106,7 +98,7 @@ def delete_jd(job_id):
 
 @app.route('/delete_candidate/<int:candidate_id>', methods=['POST'])
 def delete_candidate(candidate_id):
-    conn = sqlite3.connect('database.db'); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+    conn = sqlite3.connect('database.db'); cursor = conn.cursor()
     cursor.execute('SELECT job_id FROM candidates WHERE id = ?', (candidate_id,)); candidate = cursor.fetchone()
     cursor.execute('DELETE FROM candidates WHERE id = ?', (candidate_id,)); conn.commit(); conn.close()
     if candidate: return redirect(url_for('view_rankings', job_id=candidate['job_id']))
@@ -127,15 +119,14 @@ def match():
     jd_row = cursor.fetchone()
     if not jd_row: conn.close(); return jsonify({'error': 'Job description not found'}), 404
     job_description = jd_row['description']
-
+    
     processed_count = 0
     for resume_file in resume_files:
         if resume_file.filename == '': continue
         
         upload_folder = 'uploads'; 
         if not os.path.exists(upload_folder): os.makedirs(upload_folder)
-        resume_path = os.path.join(upload_folder, resume_file.filename)
-        resume_file.save(resume_path)
+        resume_path = os.path.join(upload_folder, resume_file.filename); resume_file.save(resume_path)
         
         resume_text = extract_text_from_pdf(resume_path)
         if "Error" in resume_text: os.remove(resume_path); continue
@@ -143,7 +134,6 @@ def match():
         similarity_score = calculate_similarity_via_api(resume_text, job_description)
         match_percentage = round(similarity_score * 100, 2)
         
-        # We no longer extract skills, so we save a placeholder.
         extracted_skills = "N/A"
         
         timestamp = datetime.datetime.now()
@@ -161,7 +151,8 @@ def match():
 
 # --- RUN THE APP ---
 if __name__ == "__main__":
-    init_db()
+    # MODIFIED: Initialize the database every time for this deployment
+    init_db() # This will create db on every restart (safe for sqlite)
     # For production on Render, the 'app.run()' is not needed as Gunicorn handles it.
     # We leave it here for local testing.
     app.run(debug=True)
