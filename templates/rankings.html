@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rankings for {{ job['title'] }}</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding-bottom: 60px; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 1000px; margin: 40px auto; background: white; padding: 20px 40px 40px 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: #1a1a1a; }
+        h1 span { color: #007bff; }
+        .back-link { display: block; text-align: center; margin-bottom: 20px; font-weight: bold; }
+        .ranking-table { width: 100%; margin-top: 20px; border-collapse: collapse; table-layout: fixed; }
+        .ranking-table th, .ranking-table td { border: 1px solid #ddd; padding: 12px; text-align: left; word-wrap: break-word; }
+        .ranking-table th { background-color: #f2f2f2; font-weight: bold; }
+        .ranking-table tr:nth-child(even) { background-color: #f9f9f9; }
+        .skills-cell { font-size: 0.9em; color: #555; }
+        /* NEW STYLES */
+        .delete-button { background-color: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
+        .actions-cell form { display: inline-block; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Candidate Rankings for <span>{{ job['title'] }}</span></h1>
+        <a href="{{ url_for('index') }}" class="back-link">← Back to Dashboard</a>
+
+        {% if candidates %}
+            <table class="ranking-table">
+                <thead>
+                    <tr>
+                        <th style="width: 5%;">Rank</th>
+                        <th style="width: 20%;">Resume File</th>
+                        <th style="width: 12%;">Match %</th>
+                        <th style="width: 30%;">Detected Skills</th>
+                        <th style="width: 18%;">Date</th>
+                        <th style="width: 15%; text-align: center;">Actions</th> <!-- NEW COLUMN -->
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for candidate in candidates %}
+                    <tr>
+                        <td style="text-align: center; font-weight: bold;">{{ loop.index }}</td>
+                        <td>{{ candidate['filename'] }}</td>
+                        <td><b>{{ "%.2f"|format(candidate['match_percentage']) }}%</b></td>
+                        <td class="skills-cell">{{ candidate['skills'] }}</td>
+                        <td>{{ candidate['timestamp'].split('.')[0] }}</td>
+                        <!-- NEW CELL with Delete button -->
+                        <td class="actions-cell" style="text-align: center;">
+                            <form action="{{ url_for('delete_candidate', candidate_id=candidate['id']) }}" method="post" onsubmit="return confirm('Permanently delete this screening?');">
+                                <button type="submit" class="delete-button">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p style="text-align: center;">No candidates have been screened for this job yet.</p>
+        {% endif %}
+    </div>
+
+</body>
+</html>

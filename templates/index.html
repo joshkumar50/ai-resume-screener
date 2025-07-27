@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Resume Screener</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding-bottom: 60px; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 800px; margin: 40px auto; background: white; padding: 20px 40px 40px 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: #1a1a1a; }
+        label { display: block; margin-top: 20px; font-weight: bold; font-size: 16px; }
+        input[type="file"], select { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;}
+        button { width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; font-size: 18px; cursor: pointer; margin-top: 30px; font-weight: bold; }
+        button:hover { background-color: #0056b3; }
+        #result { margin-top: 30px; padding: 20px; background-color: #e9ecef; border-left: 5px solid #007bff; font-size: 18px; text-align: center; font-weight: 500; display: none; }
+        .jd-table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+        .jd-table th, .jd-table td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        .jd-table th { background-color: #f2f2f2; }
+        .add-jd-button { background-color: #28a745; padding: 10px 15px; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; float: right; margin-bottom: 10px; }
+        .actions-cell form { display: inline-block; margin: 0 5px; }
+        .view-rankings-button, .delete-button { padding: 8px 12px; color: white; text-decoration: none; border-radius: 5px; border: none; font-size: 14px; cursor: pointer; }
+        .view-rankings-button { background-color: #17a2b8; }
+        .delete-button { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Resume Screener</h1>
+        <form id="screener-form">
+            <h2>Screen a New Resume</h2>
+            <label for="resume">Upload Resumes (PDFs only)</label>
+            <!-- UPDATED: Added the 'multiple' attribute to allow batch uploads -->
+            <input type="file" id="resume" name="resume" accept=".pdf" required multiple>
+
+            <label for="jd_id">Select Job Description</label>
+            <select id="jd_id" name="jd_id" required>
+                <option value="" disabled selected>-- Choose a Job --</option>
+                {% for jd in job_descriptions %}
+                    <option value="{{ jd['id'] }}">{{ jd['title'] }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Analyze Match</button>
+        </form>
+        <div id="result"></div>
+    </div>
+
+    <div class="container">
+        <h2>Job Dashboard</h2>
+        <a href="{{ url_for('add_jd') }}" class="add-jd-button">+ Add New Job</a>
+        {% if job_descriptions %}
+            <table class="jd-table">
+                <thead>
+                    <tr>
+                        <th>Job Title</th>
+                        <th style="width: 35%; text-align: center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for jd in job_descriptions %}
+                    <tr>
+                        <td>{{ jd['title'] }}</td>
+                        <td class="actions-cell" style="text-align: center;">
+                            <a href="{{ url_for('view_rankings', job_id=jd['id']) }}" class="view-rankings-button">View Rankings</a>
+                            <form action="{{ url_for('delete_jd', job_id=jd['id']) }}" method="post" onsubmit="return confirm('Are you sure you want to delete this job and all its candidates?');">
+                                <button type="submit" class="delete-button">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p style="text-align: center;">No jobs created yet. Click 'Add New Job' to start.</p>
+        {% endif %}
+    </div>
+
+    <!-- The script remains the same! It's already smart enough. -->
+    <script>
+        document.getElementById('screener-form').addEventListener('submit', async function(event) {
+            // ... (No changes needed in this script) ...
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const resultDiv = document.getElementById('result');
+            const button = form.querySelector('button');
+            resultDiv.style.display = 'block';
+            resultDiv.style.borderColor = '#007bff';
+            resultDiv.textContent = 'Analyzing... Please wait. This may take a while for multiple files.';
+            button.disabled = true;
+            try {
+                const response = await fetch('/match', { method: 'POST', body: formData });
+                const data = await response.json();
+                if (response.ok) {
+                    resultDiv.textContent = data.message;
+                    setTimeout(() => { window.location.reload(); }, 2000);
+                } else {
+                    resultDiv.textContent = 'Error: ' + data.error;
+                }
+            } catch (error) {
+                resultDiv.textContent = 'A network error occurred.';
+            } finally {
+                if (!event.target.response || !event.target.response.ok) {
+                    button.disabled = false;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
