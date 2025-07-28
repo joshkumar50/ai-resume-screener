@@ -10,6 +10,7 @@ from flask import Flask, request, jsonify, render_template, redirect, url_for
 app = Flask(__name__)
 
 # --- GET THE API KEY and SETUP THE API ---
+# Make sure you have set HUGGINGFACE_API_KEY in Render's Environment Variables
 API_TOKEN = os.environ.get('HUGGINGFACE_API_KEY')
 API_URL = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
 headers = {"Authorization": f"Bearer {API_TOKEN}"}
@@ -39,6 +40,12 @@ def init_db():
     conn.commit()
     conn.close()
 
+# <<< --- FIX 1 (SOLVED): INITIALIZE THE DATABASE ON STARTUP --- >>>
+# This ensures the tables exist when the app starts on the server.
+init_db()
+# <<< --- END OF FIX --- >>>
+
+
 # --- HELPER FUNCTIONS ---
 def extract_text_from_pdf(pdf_path):
     try:
@@ -48,6 +55,10 @@ def extract_text_from_pdf(pdf_path):
     except Exception as e: return f"Error reading PDF: {e}"
 
 def calculate_similarity_via_api(resume_text, jd_text):
+    if not API_TOKEN:
+        print("ERROR: HUGGINGFACE_API_KEY environment variable not set.")
+        return 0
+        
     payload = {
         "inputs": {
             "source_sentence": jd_text,
@@ -98,11 +109,22 @@ def delete_jd(job_id):
 
 @app.route('/delete_candidate/<int:candidate_id>', methods=['POST'])
 def delete_candidate(candidate_id):
-    conn = sqlite3.connect('database.db'); cursor = conn.cursor()
+    # <<< --- FIX 2 (SOLVED): ADDED conn.row_factory TO PREVENT TypeError --- >>>
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row  # This line ensures you can access columns by name
+    cursor = conn.cursor()
+    # <<< --- END OF FIX --- >>>
+
     cursor.execute('SELECT job_id FROM candidates WHERE id = ?', (candidate_id,)); candidate = cursor.fetchone()
-    cursor.execute('DELETE FROM candidates WHERE id = ?', (candidate_id,)); conn.commit(); conn.close()
-    if candidate: return redirect(url_for('view_rankings', job_id=candidate['job_id']))
-    else: return redirect(url_for('index'))
+    if candidate:
+        cursor.execute('DELETE FROM candidates WHERE id = ?', (candidate_id,)); conn.commit()
+        # This now works correctly because of the row_factory setting above
+        job_id_to_redirect = candidate['job_id'] 
+        conn.close()
+        return redirect(url_for('view_rankings', job_id=job_id_to_redirect))
+    
+    conn.close()
+    return redirect(url_for('index'))
 
 @app.route('/match', methods=['POST'])
 def match():
@@ -110,7 +132,7 @@ def match():
     jd_id = request.form.get('jd_id')
 
     if not resume_files or (len(resume_files) == 1 and resume_files[0].filename == ''):
-        return jsonify({'error': 'No resume files uploaded'}), 400
+        return jsonify({'error': 'No resume file uploaded'}), 400
     if not jd_id:
         return jsonify({'error': 'No job description selected'}), 400
 
@@ -121,21 +143,23 @@ def match():
     job_description = jd_row['description']
     
     processed_count = 0
+    upload_folder = 'uploads' # Define upload folder
+    if not os.path.exists(upload_folder): os.makedirs(upload_folder)
+
     for resume_file in resume_files:
         if resume_file.filename == '': continue
         
-        upload_folder = 'uploads'; 
-        if not os.path.exists(upload_folder): os.makedirs(upload_folder)
         resume_path = os.path.join(upload_folder, resume_file.filename); resume_file.save(resume_path)
         
         resume_text = extract_text_from_pdf(resume_path)
-        if "Error" in resume_text: os.remove(resume_path); continue
+        if "Error" in resume_text: 
+            os.remove(resume_path)
+            continue
 
         similarity_score = calculate_similarity_via_api(resume_text, job_description)
         match_percentage = round(similarity_score * 100, 2)
         
         extracted_skills = "N/A"
-        
         timestamp = datetime.datetime.now()
         cursor.execute(
             'INSERT INTO candidates (filename, match_percentage, skills, timestamp, job_id) VALUES (?, ?, ?, ?, ?)',
@@ -149,10 +173,6 @@ def match():
 
     return jsonify({'message': f'Successfully processed {processed_count} of {len(resume_files)} resumes.'})
 
-# --- RUN THE APP ---
+# --- RUN THE APP FOR LOCAL TESTING ---
 if __name__ == "__main__":
-    # MODIFIED: Initialize the database every time for this deployment
-    init_db() # This will create db on every restart (safe for sqlite)
-    # For production on Render, the 'app.run()' is not needed as Gunicorn handles it.
-    # We leave it here for local testing.
-    app.run(debug=True)
+    app.run(debug=True, port=5001)
